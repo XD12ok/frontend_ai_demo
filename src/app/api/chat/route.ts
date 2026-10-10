@@ -1,17 +1,17 @@
-const AI_API_URL = process.env.AI_API_URL;
+const AI_API_BASE = process.env.AI_API_BASE;
 const AI_API_KEY = process.env.AI_API_KEY;
 
 type IncomingMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(request: Request) {
-  if (!AI_API_URL) {
+  if (!AI_API_BASE) {
     return Response.json(
-      { error: "AI_API_URL belum diset di .env.local" },
+      { error: "AI_API_BASE belum diset di .env.local" },
       { status: 500 }
     );
   }
 
-  let body: { messages?: IncomingMessage[] } | null = null;
+  let body: { messages?: IncomingMessage[]; model?: string } | null = null;
   try {
     body = await request.json();
   } catch {
@@ -24,13 +24,16 @@ export async function POST(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(AI_API_URL, {
+    upstream = await fetch(`${AI_API_BASE}/api/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(AI_API_KEY ? { "X-API-Key": AI_API_KEY } : {}),
       },
-      body: JSON.stringify({ messages: body.messages }),
+      body: JSON.stringify({
+        messages: body.messages,
+        ...(body.model ? { model: body.model } : {}),
+      }),
       cache: "no-store",
     });
   } catch {
@@ -42,10 +45,14 @@ export async function POST(request: Request) {
 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
-    return Response.json(
-      { error: `AI error (${upstream.status}) ${detail.slice(0, 200)}`.trim() },
-      { status: 502 }
-    );
+    let message = `AI error (${upstream.status})`;
+    try {
+      const parsed = JSON.parse(detail);
+      if (parsed?.detail) message = String(parsed.detail);
+    } catch {
+      if (detail) message = `${message} ${detail.slice(0, 200)}`.trim();
+    }
+    return Response.json({ error: message }, { status: 502 });
   }
 
   const encoder = new TextEncoder();

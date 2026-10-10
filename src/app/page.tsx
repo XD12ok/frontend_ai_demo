@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Tupai from "@/components/Tupai";
 
@@ -10,11 +10,38 @@ type Message = {
   content: string;
 };
 
+const MODEL_LABELS: Record<string, string> = {
+  "ai-listener": "Teman Curhat",
+  "ai-listener-edukasi": "Edukasi Mental",
+};
+
+function labelModel(name: string) {
+  return MODEL_LABELS[name] ?? name;
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [model, setModel] = useState("");
+  const [models, setModels] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/models")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        const list: string[] = Array.isArray(data.models) ? data.models : [];
+        setModels(list);
+        setModel((prev) => prev || data.default_model || list[0] || "");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -47,6 +74,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: history.map(({ role, content }) => ({ role, content })),
+          ...(model ? { model } : {}),
         }),
       });
 
@@ -132,6 +160,25 @@ export default function Home() {
             {loading ? "sedang mengetik..." : "online"}
           </p>
         </div>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          disabled={loading || models.length === 0}
+          aria-label="Pilih model"
+          className="max-w-[9.5rem] shrink-0 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 outline-none transition focus:border-indigo-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+        >
+          {models.length === 0 ? (
+            <option value={model}>
+              {model ? labelModel(model) : "Memuat…"}
+            </option>
+          ) : (
+            models.map((m) => (
+              <option key={m} value={m}>
+                {labelModel(m)}
+              </option>
+            ))
+          )}
+        </select>
         {started && (
           <button
             onClick={() => setMessages([])}
